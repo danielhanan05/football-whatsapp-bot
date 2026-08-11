@@ -89,17 +89,25 @@ function normalizeChannelName(name) {
         return "";
     }
 
-
     return name
         .trim()
         .toLowerCase()
 
-        // Normalize different quotation marks
+        // Normalize quotation marks
         .replace(/[״“”]/g, "\"")
         .replace(/[׳‘’]/g, "'")
 
-        // Remove unnecessary repeated spaces
-        .replace(/\s+/g, " ");
+        // "Sport 5 Live HD" -> "Sport 5 Live"
+        .replace(/\s+hd$/i, "")
+
+        // Normalize "+" to "plus"
+        // "Sport 5+" -> "Sport 5 plus"
+        .replace(/\+/g, " plus ")
+
+        // Collapse duplicate spaces
+        .replace(/\s+/g, " ")
+
+        .trim();
 }
 
 
@@ -215,32 +223,24 @@ const CHANNEL_ALIASES = new Map([
     ["ספורט 5 גולד", "SPORT_5_GOLD"],
 
 
-    // ========================================================
     // 5 PLUS
-    // ========================================================
-
     ["5 plus", "SPORT_5_PLUS"],
     ["5plus", "SPORT_5_PLUS"],
-    ["5+", "SPORT_5_PLUS"],
     ["sport 5 plus", "SPORT_5_PLUS"],
     ["sport5 plus", "SPORT_5_PLUS"],
-    ["sport5plus", "SPORT_5_PLUS"],
+    ["ספורט 5 plus", "SPORT_5_PLUS"],
     ["5 פלוס", "SPORT_5_PLUS"],
     ["ספורט 5 פלוס", "SPORT_5_PLUS"],
+    
 
 
-    // ========================================================
     // 5 LIVE
-    // ========================================================
-
     ["5 live", "SPORT_5_LIVE"],
     ["5live", "SPORT_5_LIVE"],
     ["sport 5 live", "SPORT_5_LIVE"],
     ["sport5 live", "SPORT_5_LIVE"],
-    ["sport5live", "SPORT_5_LIVE"],
     ["5 לייב", "SPORT_5_LIVE"],
     ["ספורט 5 לייב", "SPORT_5_LIVE"],
-
 
     // ========================================================
     // SPORT 5 / CHANNEL 55

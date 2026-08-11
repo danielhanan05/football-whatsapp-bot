@@ -3,16 +3,21 @@ const {
     LocalAuth
 } = require("whatsapp-web.js");
 
+
 const qrcode =
     require("qrcode-terminal");
+
 
 const scores365 =
     require("./scores365");
 
+
 const {
     TEAM_COMMANDS,
-    COMPETITIONS
+    COMPETITIONS,
+    DYNAMIC_TEAM_LEAGUES
 } = require("./config");
+
 
 const {
     checkRateLimit
@@ -64,20 +69,14 @@ const client =
 let clientReady =
     false;
 
+
 let shuttingDown =
     false;
 
 
-/*
-    message_create may be emitted for both incoming and
-    outgoing messages.
-
-    This prevents the same WhatsApp message ID from being
-    processed twice in case of reconnect/event duplication.
-*/
-
 const processedMessages =
     new Map();
+
 
 const MESSAGE_DEDUP_TTL_MS =
     60_000;
@@ -134,9 +133,7 @@ function alreadyProcessed(
 ) {
 
     const id =
-        getMessageId(
-            message
-        );
+        getMessageId(message);
 
 
     if (!id) {
@@ -145,10 +142,9 @@ function alreadyProcessed(
 
 
     if (
-        processedMessages.has(
-            id
-        )
+        processedMessages.has(id)
     ) {
+
         return true;
     }
 
@@ -196,26 +192,12 @@ setInterval(
 
 
 // ============================================================
-// MESSAGE IDENTIFIERS
+// MESSAGE IDs
 // ============================================================
 
 function getChatId(
     message
 ) {
-
-    /*
-        whatsapp-web.js semantics:
-
-        Incoming message:
-            message.from = chat
-            message.to   = current user
-
-        Outgoing message:
-            message.from = current user
-            message.to   = chat
-
-        Therefore the correct chat ID is:
-    */
 
     return message.fromMe
         ? message.to
@@ -226,19 +208,6 @@ function getChatId(
 function getUserId(
     message
 ) {
-
-    /*
-        Incoming group message:
-            message.author = actual participant
-
-        Incoming private message:
-            message.author may be undefined
-            message.from = sender
-
-        Outgoing message:
-            this is our own WhatsApp account.
-            message.from identifies the sender/current user.
-    */
 
     if (message.fromMe) {
 
@@ -309,11 +278,10 @@ async function safeSend(
     try {
 
         /*
-            Intentionally using client.sendMessage()
-            instead of message.reply() / message.getChat().
+            Keep using sendMessage directly.
 
-            Those previously caused getChatById-related
-            compatibility errors on this setup.
+            message.reply() / getChat() caused compatibility
+            problems with the current WhatsApp Web version.
         */
 
         await client.sendMessage(
@@ -332,9 +300,7 @@ async function safeSend(
         );
 
 
-        console.error(
-            error
-        );
+        console.error(error);
 
 
         return false;
@@ -352,24 +318,26 @@ function buildHelpMessage() {
         Object.values(
             COMPETITIONS
         )
+
             .sort(
                 (a, b) =>
                     a.priority -
                     b.priority
             )
+
             .map(
                 competition =>
                     `${competition.emoji} ${competition.name}`
             )
-            .join(
-                "\n"
-            );
+
+            .join("\n");
 
 
-    const teamCommands =
+    const israeliTeamCommands =
         Object.entries(
             TEAM_COMMANDS
         )
+
             .map(
                 (
                     [
@@ -379,32 +347,88 @@ function buildHelpMessage() {
                 ) =>
                     `${command} — ${team.name}`
             )
-            .join(
-                "\n"
-            );
+
+            .join("\n");
+
+
+    const dynamicLeagueNames =
+        DYNAMIC_TEAM_LEAGUES
+
+            .map(
+                league =>
+                    `• ${league.name}`
+            )
+
+            .join("\n");
 
 
     return [
+
         "⚽ *Football Bot*",
+
         "",
-        "הבוט מרכז משחקים, שעות ושידורי כדורגל בישראל באמצעות נתוני 365Scores.",
+
+        "הבוט מרכז משחקים, שעות, שידורים ומשחקים קרובים באמצעות נתוני 365Scores.",
+
         "",
+
         "*פקודות כלליות:*",
+
         "",
+
         "!today — משחקי היום במפעלים הנתמכים",
+
         "!tomorrow — משחקי מחר",
+
         "!link — משחקי היום, ערוץ השידור בישראל וקישור אם קיים",
+
         "!help — מציג את ההודעה הזאת",
+
         "",
-        "*מפעלים שנכללים:*",
+
+        "*מפעלים שנכללים במשחקי היום:*",
+
         competitionNames,
+
         "",
-        "*משחקים קרובים לפי קבוצה:*",
-        teamCommands
-    ]
-        .join(
-            "\n"
-        );
+
+        "*חיפוש קבוצה באירופה:*",
+
+        "כתבו ! ולאחר מכן את שם הקבוצה באנגלית.",
+
+        "",
+
+        "לדוגמה:",
+
+        "!chelsea",
+
+        "!manchester united",
+
+        "!arsenal",
+
+        "!barcelona",
+
+        "!bayern munich",
+
+        "!inter",
+
+        "",
+
+        "אין צורך לכתוב FC.",
+
+        "",
+
+        "*ליגות זמינות לחיפוש קבוצות:*",
+
+        dynamicLeagueNames,
+
+        "",
+
+        "*פקודות קבוצות ליגת העל:*",
+
+        israeliTeamCommands
+
+    ].join("\n");
 }
 
 
@@ -441,27 +465,90 @@ const STATIC_COMMANDS = {
 
 
 // ============================================================
-// COMMAND HELPERS
+// DYNAMIC COMMAND VALIDATION
+// ============================================================
+//
+// Not every random "!..." message should trigger a lookup.
+//
+// Examples accepted:
+// !chelsea
+// !manchester united
+// !paris-something
+//
+// Very long / malformed inputs are ignored.
 // ============================================================
 
-function isSupportedCommand(
+function getDynamicTeamQuery(
     command
 ) {
 
-    return Boolean(
-        STATIC_COMMANDS[
-            command
-        ] ||
-        TEAM_COMMANDS[
-            command
-        ]
-    );
+    if (
+        typeof command !==
+        "string" ||
+        !command.startsWith("!")
+    ) {
+
+        return null;
+    }
+
+
+    const query =
+        command
+            .slice(1)
+            .trim();
+
+
+    if (
+        query.length < 2 ||
+        query.length > 50
+    ) {
+
+        return null;
+    }
+
+
+    const words =
+        query.split(/\s+/);
+
+
+    if (
+        words.length > 6
+    ) {
+
+        return null;
+    }
+
+
+    /*
+        Allow normal team-name characters only.
+
+        Unicode letter support is intentional.
+    */
+
+    if (
+        !/^[\p{L}\p{N}\p{M}\s.'&’\-]+$/u
+            .test(query)
+    ) {
+
+        return null;
+    }
+
+
+    return query;
 }
 
+
+// ============================================================
+// COMMAND EXECUTION
+// ============================================================
 
 async function executeCommand(
     command
 ) {
+
+    // --------------------------------------------------------
+    // Static command
+    // --------------------------------------------------------
 
     const staticHandler =
         STATIC_COMMANDS[
@@ -475,22 +562,86 @@ async function executeCommand(
     }
 
 
-    const team =
+    // --------------------------------------------------------
+    // Israeli shortcut
+    // --------------------------------------------------------
+
+    const configuredTeam =
         TEAM_COMMANDS[
             command
         ];
 
 
-    if (team) {
+    if (configuredTeam) {
 
         return scores365.teamFixtures(
-            team.id,
-            team.name
+            configuredTeam.id,
+            configuredTeam.name
         );
     }
 
 
-    return null;
+    // --------------------------------------------------------
+    // Dynamic European team command
+    // --------------------------------------------------------
+
+    const teamQuery =
+        getDynamicTeamQuery(
+            command
+        );
+
+
+    if (!teamQuery) {
+
+        return null;
+    }
+
+
+    const lookup =
+        await scores365.findDynamicTeam(
+            teamQuery
+        );
+
+
+    if (
+        lookup.status ===
+        "not_found"
+    ) {
+
+        return (
+            `❌ לא מצאתי קבוצה בשם "${teamQuery}" בליגות הנתמכות.\n\nשלח !help כדי לראות אילו ליגות זמינות.`
+        );
+    }
+
+
+    if (
+        lookup.status ===
+        "ambiguous"
+    ) {
+
+        const names =
+            lookup.matches
+                .map(
+                    team =>
+                        `• ${team.name}`
+                )
+                .join("\n");
+
+
+        return [
+            `⚠️ מצאתי יותר מקבוצה אחת שמתאימה ל-"${teamQuery}":`,
+            "",
+            names,
+            "",
+            "נסה להשתמש בשם המלא יותר של הקבוצה."
+        ].join("\n");
+    }
+
+
+    return scores365.teamFixtures(
+        lookup.team.id,
+        lookup.team.name
+    );
 }
 
 
@@ -570,9 +721,7 @@ client.on(
         );
 
 
-        console.error(
-            message
-        );
+        console.error(message);
     }
 );
 
@@ -607,10 +756,6 @@ async function processMessage(
     }
 
 
-    // --------------------------------------------------------
-    // Only text messages
-    // --------------------------------------------------------
-
     if (
         typeof message.body !==
         "string"
@@ -625,39 +770,53 @@ async function processMessage(
             .toLowerCase();
 
 
-    // --------------------------------------------------------
-    // Critical self-message protection
-    // --------------------------------------------------------
-    //
-    // We WANT commands that we manually send ourselves:
-    //
-    //     !today
-    //
-    // But responses generated by the bot are also outgoing
-    // messages from our account.
-    //
-    // Since bot responses never begin with "!", they are
-    // ignored here and cannot create a response loop.
-    // --------------------------------------------------------
+    /*
+        This also prevents the bot from processing its own
+        generated responses.
+
+        Bot responses don't begin with "!".
+    */
 
     if (
-        !command.startsWith(
-            "!"
-        )
+        !command.startsWith("!")
     ) {
         return;
     }
 
 
     // --------------------------------------------------------
-    // Ignore unknown !commands
+    // Decide whether this is even a valid command candidate
+    // BEFORE applying rate limiting or making API calls.
     // --------------------------------------------------------
 
-    if (
-        !isSupportedCommand(
+    const isStatic =
+        Boolean(
+            STATIC_COMMANDS[
+                command
+            ]
+        );
+
+
+    const isIsraeliAlias =
+        Boolean(
+            TEAM_COMMANDS[
+                command
+            ]
+        );
+
+
+    const dynamicQuery =
+        getDynamicTeamQuery(
             command
-        )
+        );
+
+
+    if (
+        !isStatic &&
+        !isIsraeliAlias &&
+        !dynamicQuery
     ) {
+
         return;
     }
 
@@ -675,9 +834,7 @@ async function processMessage(
         log(
             "WARN",
             "Duplicate message ignored",
-            getMessageId(
-                message
-            )
+            getMessageId(message)
         );
 
 
@@ -685,20 +842,16 @@ async function processMessage(
     }
 
 
-    // ========================================================
-    // IDENTIFY CHAT + USER
-    // ========================================================
+    // --------------------------------------------------------
+    // IDs
+    // --------------------------------------------------------
 
     const chatId =
-        getChatId(
-            message
-        );
+        getChatId(message);
 
 
     const userId =
-        getUserId(
-            message
-        );
+        getUserId(message);
 
 
     if (
@@ -746,9 +899,7 @@ async function processMessage(
         );
 
 
-        console.error(
-            error
-        );
+        console.error(error);
 
 
         await safeSend(
@@ -771,12 +922,6 @@ async function processMessage(
         );
 
 
-        /*
-            rateLimiter.js also rate-limits warning messages,
-            so a spammer cannot make the bot spam the group
-            with warnings.
-        */
-
         if (
             rateLimit.notify
         ) {
@@ -793,7 +938,7 @@ async function processMessage(
 
 
     // ========================================================
-    // EXECUTE COMMAND
+    // EXECUTE
     // ========================================================
 
     let response;
@@ -814,9 +959,7 @@ async function processMessage(
         );
 
 
-        console.error(
-            error
-        );
+        console.error(error);
 
 
         await safeSend(
@@ -830,7 +973,7 @@ async function processMessage(
 
 
     // ========================================================
-    // VALIDATE OUTPUT
+    // VALIDATE RESPONSE
     // ========================================================
 
     if (
@@ -839,18 +982,12 @@ async function processMessage(
         !response.trim()
     ) {
 
-        log(
-            "ERROR",
-            `Empty response: ${command}`
-        );
-
-
         return;
     }
 
 
     // ========================================================
-    // SEND RESPONSE
+    // SEND
     // ========================================================
 
     const success =
@@ -874,19 +1011,9 @@ async function processMessage(
 // MESSAGE EVENT
 // ============================================================
 //
-// IMPORTANT:
-//
-// "message_create" is used instead of "message".
-//
-// whatsapp-web.js emits message_create for newly-created
-// messages and it MAY include messages sent by the current
-// WhatsApp account.
-//
-// The normal "message" event is emitted only after the
-// library checks that msg.id.fromMe is false.
-//
-// This is what lets both us and other group members use
-// the bot.
+// message_create allows BOTH:
+// - commands from other users
+// - commands sent manually by the account running the bot
 // ============================================================
 
 client.on(
@@ -907,9 +1034,7 @@ client.on(
             );
 
 
-            console.error(
-                error
-            );
+            console.error(error);
         }
     }
 );
@@ -929,9 +1054,7 @@ process.on(
         );
 
 
-        console.error(
-            reason
-        );
+        console.error(reason);
     }
 );
 
@@ -946,9 +1069,7 @@ process.on(
         );
 
 
-        console.error(
-            error
-        );
+        console.error(error);
     }
 );
 
@@ -961,9 +1082,7 @@ async function shutdown(
     signal
 ) {
 
-    if (
-        shuttingDown
-    ) {
+    if (shuttingDown) {
         return;
     }
 
@@ -994,9 +1113,7 @@ async function shutdown(
         );
 
 
-        console.error(
-            error
-        );
+        console.error(error);
     }
 
 
@@ -1007,18 +1124,14 @@ async function shutdown(
 process.on(
     "SIGINT",
     () =>
-        shutdown(
-            "SIGINT"
-        )
+        shutdown("SIGINT")
 );
 
 
 process.on(
     "SIGTERM",
     () =>
-        shutdown(
-            "SIGTERM"
-        )
+        shutdown("SIGTERM")
 );
 
 
@@ -1046,9 +1159,7 @@ async function start() {
         );
 
 
-        console.error(
-            error
-        );
+        console.error(error);
 
 
         process.exit(1);

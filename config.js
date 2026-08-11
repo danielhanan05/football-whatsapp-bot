@@ -1,17 +1,12 @@
 // ============================================================
-// 365SCORES / BOT CONFIGURATION
+// BOT / 365SCORES CONFIGURATION
 // ============================================================
 
 const BOT = {
     name: "Football Bot",
-
     timezone: "Asia/Jerusalem",
-
     countryId: 6,
-
     appTypeId: 5,
-
-    // 2 = Hebrew in the endpoints we've been using
     langId: 2
 };
 
@@ -54,62 +49,106 @@ const COMPETITIONS = {
         id: 572,
         name: "ליגת האלופות",
         emoji: "⭐",
-        priority: 4
+        priority: 5
     },
 
     573: {
         id: 573,
         name: "הליגה האירופית",
         emoji: "🟠",
-        priority: 5
+        priority: 6
     },
 
     7685: {
         id: 7685,
         name: "קונפרנס ליג",
         emoji: "🟢",
-        priority: 6
+        priority: 7
     },
 
     7: {
         id: 7,
         name: "פרמייר ליג",
         emoji: "🏴",
-        priority: 7
+        priority: 8
     },
 
     11: {
         id: 11,
         name: "לה ליגה",
         emoji: "🇪🇸",
-        priority: 8
+        priority: 9
     },
 
     25: {
         id: 25,
         name: "בונדסליגה",
         emoji: "🇩🇪",
-        priority: 9
+        priority: 10
     },
 
     17: {
         id: 17,
         name: "סרייה A",
         emoji: "🇮🇹",
-        priority: 10
+        priority: 11
     }
 };
 
 
 const INCLUDED_COMPETITION_IDS =
     new Set(
-        Object.keys(COMPETITIONS)
-            .map(Number)
+        Object.keys(COMPETITIONS).map(Number)
     );
 
 
 // ============================================================
-// ISRAELI PREMIER LEAGUE TEAMS
+// LEAGUES AVAILABLE FOR DYNAMIC TEAM SEARCH
+// ============================================================
+//
+// Commands such as:
+//
+// !chelsea
+// !manchester united
+// !barcelona
+// !bayern munich
+// !inter
+//
+// are resolved dynamically from the current league standings.
+// No individual European team IDs are hard-coded.
+// ============================================================
+
+const DYNAMIC_TEAM_LEAGUES = [
+
+    {
+        competitionId: 7,
+        name: "Premier League"
+    },
+
+    {
+        competitionId: 11,
+        name: "La Liga"
+    },
+
+    {
+        competitionId: 25,
+        name: "Bundesliga"
+    },
+
+    {
+        competitionId: 17,
+        name: "Serie A"
+    }
+];
+
+
+// ============================================================
+// ISRAELI PREMIER LEAGUE COMMAND ALIASES
+// ============================================================
+//
+// These remain as convenient short commands.
+//
+// European teams are NOT stored here.
 // ============================================================
 
 const TEAM_COMMANDS = {
@@ -187,54 +226,66 @@ const TEAM_COMMANDS = {
 
 
 // ============================================================
-// RATE LIMIT SETTINGS
+// RATE LIMIT
 // ============================================================
 
 const RATE_LIMIT = {
 
-    // Same person can't execute commands faster than this
     userCooldownMs: 5000,
 
-    // Maximum successful commands by one person per minute
     userMaxPerMinute: 6,
 
-    // Maximum successful commands in one group/chat per minute
     chatMaxPerMinute: 10,
 
-    // Don't spam rate-limit warning messages either
     warningCooldownMs: 5000
 };
 
 
 // ============================================================
-// CACHE / NETWORK
+// NETWORK / CACHE
 // ============================================================
 
 const NETWORK = {
 
     requestTimeoutMs: 10000,
 
-    gamesCacheMs: 2 * 60 * 1000,
+    gamesCacheMs:
+        2 * 60 * 1000,
 
-    fixturesCacheMs: 5 * 60 * 1000,
+    fixturesCacheMs:
+        5 * 60 * 1000,
 
-    gameDetailsCacheMs: 2 * 60 * 1000,
+    gameDetailsCacheMs:
+        2 * 60 * 1000,
 
     /*
-        Global delay between 365Scores requests.
+        League membership changes extremely rarely.
 
-        This deliberately makes !link a little slower,
-        but prevents a burst of dozens of requests.
+        12 hours avoids repeatedly downloading standings
+        while still refreshing automatically.
     */
-    minimumApiRequestGapMs: 150
+    teamDirectoryCacheMs:
+        12 * 60 * 60 * 1000,
+
+    /*
+        Minimum delay between calls to 365Scores.
+
+        All calls use the global request queue in
+        scores365.js.
+    */
+    minimumApiRequestGapMs:
+        150
 };
 
 
 module.exports = {
+
     BOT,
 
     COMPETITIONS,
     INCLUDED_COMPETITION_IDS,
+
+    DYNAMIC_TEAM_LEAGUES,
 
     TEAM_COMMANDS,
 

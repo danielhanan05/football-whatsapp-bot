@@ -2,6 +2,7 @@ const {
     BOT,
     COMPETITIONS,
     INCLUDED_COMPETITION_IDS,
+    DYNAMIC_TEAM_LEAGUES,
     NETWORK
 } = require("./config");
 
@@ -63,10 +64,8 @@ function setCached(
         key,
         {
             value,
-
             expiresAt:
-                Date.now() +
-                ttlMs
+                Date.now() + ttlMs
         }
     );
 }
@@ -75,27 +74,21 @@ function setCached(
 // ============================================================
 // REQUEST DEDUPLICATION
 // ============================================================
+//
+// If multiple users request the same resource at the same
+// time, only one network request is made.
+// ============================================================
 
 async function deduplicatedRequest(
     key,
     callback
 ) {
 
-    /*
-        If multiple users request the exact same data
-        at the same time, they all wait for the same
-        Promise instead of creating duplicate API calls.
-    */
-
     if (
-        inflightRequests.has(
-            key
-        )
+        inflightRequests.has(key)
     ) {
 
-        return inflightRequests.get(
-            key
-        );
+        return inflightRequests.get(key);
     }
 
 
@@ -103,10 +96,7 @@ async function deduplicatedRequest(
         callback()
             .finally(
                 () => {
-
-                    inflightRequests.delete(
-                        key
-                    );
+                    inflightRequests.delete(key);
                 }
             );
 
@@ -122,7 +112,15 @@ async function deduplicatedRequest(
 
 
 // ============================================================
-// GLOBAL API REQUEST QUEUE
+// GLOBAL 365SCORES REQUEST QUEUE
+// ============================================================
+//
+// ALL calls to 365Scores go through this queue.
+//
+// This prevents:
+// - !link from firing dozens of requests simultaneously
+// - dynamic team discovery from creating a burst
+// - multiple users from hammering the API at once
 // ============================================================
 
 let requestQueue =
@@ -137,10 +135,7 @@ function wait(ms) {
 
     return new Promise(
         resolve =>
-            setTimeout(
-                resolve,
-                ms
-            )
+            setTimeout(resolve, ms)
     );
 }
 
@@ -160,20 +155,14 @@ function queueApiRequest(
             const waitTime =
                 Math.max(
                     0,
-
                     NETWORK.minimumApiRequestGapMs -
                     elapsed
                 );
 
 
-            if (
-                waitTime >
-                0
-            ) {
+            if (waitTime > 0) {
 
-                await wait(
-                    waitTime
-                );
+                await wait(waitTime);
             }
 
 
@@ -185,11 +174,6 @@ function queueApiRequest(
         };
 
 
-    /*
-        execute is supplied for both fulfilled and rejected
-        states so one failed API call doesn't break the queue.
-    */
-
     const result =
         requestQueue.then(
             execute,
@@ -197,10 +181,11 @@ function queueApiRequest(
         );
 
 
+    /*
+        Keep the queue alive even when one API call fails.
+    */
     requestQueue =
-        result.catch(
-            () => {}
-        );
+        result.catch(() => {});
 
 
     return result;
@@ -208,7 +193,7 @@ function queueApiRequest(
 
 
 // ============================================================
-// 365SCORES HTTP
+// HTTP
 // ============================================================
 
 async function fetch365(
@@ -245,9 +230,7 @@ async function fetch365(
 
             for (
                 const [key, value]
-                of Object.entries(
-                    finalParams
-                )
+                of Object.entries(finalParams)
             ) {
 
                 if (
@@ -269,9 +252,7 @@ async function fetch365(
 
             const timeout =
                 setTimeout(
-                    () =>
-                        controller.abort(),
-
+                    () => controller.abort(),
                     NETWORK.requestTimeoutMs
                 );
 
@@ -286,7 +267,6 @@ async function fetch365(
                                 controller.signal,
 
                             headers: {
-
                                 Accept:
                                     "application/json",
 
@@ -297,9 +277,7 @@ async function fetch365(
                     );
 
 
-                if (
-                    !response.ok
-                ) {
+                if (!response.ok) {
 
                     throw new Error(
                         `365Scores HTTP ${response.status}`
@@ -326,9 +304,7 @@ async function fetch365(
 
             } finally {
 
-                clearTimeout(
-                    timeout
-                );
+                clearTimeout(timeout);
             }
         }
     );
@@ -364,17 +340,14 @@ function getIsraelDate(
                     "2-digit"
             }
         )
-            .formatToParts(
-                now
-            );
+            .formatToParts(now);
 
 
     const year =
         Number(
             parts.find(
                 part =>
-                    part.type ===
-                    "year"
+                    part.type === "year"
             ).value
         );
 
@@ -383,8 +356,7 @@ function getIsraelDate(
         Number(
             parts.find(
                 part =>
-                    part.type ===
-                    "month"
+                    part.type === "month"
             ).value
         );
 
@@ -393,8 +365,7 @@ function getIsraelDate(
         Number(
             parts.find(
                 part =>
-                    part.type ===
-                    "day"
+                    part.type === "day"
             ).value
         );
 
@@ -404,8 +375,7 @@ function getIsraelDate(
             Date.UTC(
                 year,
                 month - 1,
-                day +
-                    daysFromToday
+                day + daysFromToday
             )
         );
 
@@ -413,20 +383,13 @@ function getIsraelDate(
     const dd =
         String(
             date.getUTCDate()
-        ).padStart(
-            2,
-            "0"
-        );
+        ).padStart(2, "0");
 
 
     const mm =
         String(
-            date.getUTCMonth() +
-            1
-        ).padStart(
-            2,
-            "0"
-        );
+            date.getUTCMonth() + 1
+        ).padStart(2, "0");
 
 
     return (
@@ -464,9 +427,7 @@ function formatTime(
                 false
         }
     ).format(
-        new Date(
-            dateString
-        )
+        new Date(dateString)
     );
 }
 
@@ -496,9 +457,7 @@ function formatDate(
                 "numeric"
         }
     ).format(
-        new Date(
-            dateString
-        )
+        new Date(dateString)
     );
 }
 
@@ -506,8 +465,7 @@ function formatDate(
 function homeName(game) {
 
     return (
-        game.homeCompetitor
-            ?.name ||
+        game.homeCompetitor?.name ||
         "לא ידוע"
     );
 }
@@ -516,22 +474,17 @@ function homeName(game) {
 function awayName(game) {
 
     return (
-        game.awayCompetitor
-            ?.name ||
+        game.awayCompetitor?.name ||
         "לא ידוע"
     );
 }
 
 
-function competitionName(
-    game
-) {
+function competitionName(game) {
 
     const configured =
         COMPETITIONS[
-            Number(
-                game.competitionId
-            )
+            Number(game.competitionId)
         ];
 
 
@@ -549,28 +502,19 @@ function competitionName(
 }
 
 
-function sortGames(
-    games
-) {
+function sortGames(games) {
 
-    return [
-        ...games
-    ].sort(
-        (a, b) =>
-
-            new Date(
-                a.startTime
-            ) -
-
-            new Date(
-                b.startTime
-            )
-    );
+    return [...games]
+        .sort(
+            (a, b) =>
+                new Date(a.startTime) -
+                new Date(b.startTime)
+        );
 }
 
 
 // ============================================================
-// GAMES BY DATE
+// DAILY GAMES
 // ============================================================
 
 async function getGamesByDate(
@@ -582,9 +526,7 @@ async function getGamesByDate(
 
 
     const cached =
-        getCached(
-            cacheKey
-        );
+        getCached(cacheKey);
 
 
     if (cached) {
@@ -601,8 +543,7 @@ async function getGamesByDate(
                 await fetch365(
                     "/web/games/allscores/",
                     {
-                        sports:
-                            1,
+                        sports: 1,
 
                         startDate:
                             date,
@@ -623,9 +564,7 @@ async function getGamesByDate(
 
 
             const games =
-                Array.isArray(
-                    data.games
-                )
+                Array.isArray(data.games)
                     ? data.games
                     : [];
 
@@ -648,50 +587,36 @@ async function getIncludedGames(
 ) {
 
     const games =
-        await getGamesByDate(
-            date
-        );
+        await getGamesByDate(date);
 
 
     return games.filter(
         game =>
-
             INCLUDED_COMPETITION_IDS.has(
-                Number(
-                    game.competitionId
-                )
+                Number(game.competitionId)
             )
     );
 }
 
 
 // ============================================================
-// GROUPING
+// GROUP GAMES BY COMPETITION
 // ============================================================
 
-function groupGames(
-    games
-) {
+function groupGames(games) {
 
     const groups =
         new Map();
 
 
-    for (
-        const game
-        of games
-    ) {
+    for (const game of games) {
 
         const competitionId =
-            Number(
-                game.competitionId
-            );
+            Number(game.competitionId);
 
 
         if (
-            !groups.has(
-                competitionId
-            )
+            !groups.has(competitionId)
         ) {
 
             groups.set(
@@ -702,41 +627,35 @@ function groupGames(
 
 
         groups
-            .get(
-                competitionId
-            )
-            .push(
-                game
-            );
+            .get(competitionId)
+            .push(game);
     }
 
 
     return [
         ...groups.entries()
-    ].sort(
-        (
-            [idA],
-            [idB]
-        ) => {
+    ]
+        .sort(
+            ([idA], [idB]) => {
 
-            const priorityA =
-                COMPETITIONS[idA]
-                    ?.priority ??
-                999;
+                const priorityA =
+                    COMPETITIONS[idA]
+                        ?.priority ??
+                    999;
 
 
-            const priorityB =
-                COMPETITIONS[idB]
-                    ?.priority ??
-                999;
+                const priorityB =
+                    COMPETITIONS[idB]
+                        ?.priority ??
+                    999;
 
 
-            return (
-                priorityA -
-                priorityB
-            );
-        }
-    );
+                return (
+                    priorityA -
+                    priorityB
+                );
+            }
+        );
 }
 
 
@@ -753,9 +672,7 @@ async function getUpcomingGames(
 
 
     const cached =
-        getCached(
-            cacheKey
-        );
+        getCached(cacheKey);
 
 
     if (cached) {
@@ -782,9 +699,7 @@ async function getUpcomingGames(
 
 
             const games =
-                Array.isArray(
-                    data.games
-                )
+                Array.isArray(data.games)
                     ? data.games
                     : [];
 
@@ -799,6 +714,596 @@ async function getUpcomingGames(
             return games;
         }
     );
+}
+
+
+// ============================================================
+// DYNAMIC EUROPEAN TEAM DIRECTORY
+// ============================================================
+
+function normalizeTeamName(value) {
+
+    if (
+        typeof value !== "string"
+    ) {
+        return "";
+    }
+
+
+    return value
+
+        /*
+            Convert accented characters where possible.
+            Example: fútbol -> futbol
+        */
+        .normalize("NFD")
+
+        .replace(
+            /[\u0300-\u036f]/g,
+            ""
+        )
+
+        .toLowerCase()
+
+        .replace(
+            /&/g,
+            " and "
+        )
+
+        /*
+            Hyphens and punctuation should not prevent
+            a user from finding a club.
+        */
+        .replace(
+            /[-_.']/g,
+            " "
+        )
+
+        .replace(
+            /[^a-z0-9\s]/g,
+            " "
+        )
+
+        .replace(
+            /\s+/g,
+            " "
+        )
+
+        .trim();
+}
+
+
+// ------------------------------------------------------------
+// Remove generic club prefixes/suffixes ONLY for matching.
+//
+// Examples:
+//
+// Chelsea FC     -> Chelsea
+// FC Barcelona   -> Barcelona
+// AFC Bournemouth -> Bournemouth
+// AC Milan       -> Milan
+//
+// We still also preserve the original aliases.
+// ------------------------------------------------------------
+
+const GENERIC_CLUB_TOKENS =
+    new Set([
+        "fc",
+        "afc",
+        "cf",
+        "cfc",
+        "ac",
+        "ssc"
+    ]);
+
+
+function stripGenericClubTokens(
+    value
+) {
+
+    const normalized =
+        normalizeTeamName(value);
+
+
+    if (!normalized) {
+        return "";
+    }
+
+
+    const words =
+        normalized.split(" ");
+
+
+    while (
+        words.length > 1 &&
+        GENERIC_CLUB_TOKENS.has(
+            words[0]
+        )
+    ) {
+
+        words.shift();
+    }
+
+
+    while (
+        words.length > 1 &&
+        GENERIC_CLUB_TOKENS.has(
+            words[
+                words.length - 1
+            ]
+        )
+    ) {
+
+        words.pop();
+    }
+
+
+    return words.join(" ");
+}
+
+
+// ============================================================
+// LOAD ONE LEAGUE'S CURRENT TEAMS
+// ============================================================
+
+async function getLeagueTeams(
+    competitionId
+) {
+
+    const cacheKey =
+        `league-teams:${competitionId}`;
+
+
+    const cached =
+        getCached(cacheKey);
+
+
+    if (cached) {
+        return cached;
+    }
+
+
+    return deduplicatedRequest(
+        cacheKey,
+
+        async () => {
+
+            const data =
+                await fetch365(
+                    "/web/standings/",
+                    {
+                        competitions:
+                            competitionId,
+
+                        live:
+                            false,
+
+                        withSeasonsFilter:
+                            true
+                    }
+                );
+
+
+            const standings =
+                Array.isArray(
+                    data.standings
+                )
+                    ? data.standings
+                    : [];
+
+
+            /*
+                Prefer the current stage of the requested
+                competition.
+
+                Fallback to any matching standing if the
+                API does not mark a current stage.
+            */
+
+            const relevantStandings =
+                standings.filter(
+                    standing =>
+                        Number(
+                            standing.competitionId
+                        ) ===
+                            Number(
+                                competitionId
+                            )
+                );
+
+
+            const currentStanding =
+                relevantStandings.find(
+                    standing =>
+                        standing.isCurrentStage
+                ) ||
+                relevantStandings[0];
+
+
+            if (
+                !currentStanding ||
+                !Array.isArray(
+                    currentStanding.rows
+                )
+            ) {
+
+                return [];
+            }
+
+
+            const teams =
+                currentStanding.rows
+
+                    .map(
+                        row =>
+                            row.competitor
+                    )
+
+                    .filter(
+                        competitor =>
+                            competitor &&
+                            competitor.id &&
+                            competitor.name
+                    )
+
+                    .map(
+                        competitor => ({
+                            id:
+                                Number(
+                                    competitor.id
+                                ),
+
+                            name:
+                                competitor.name,
+
+                            shortName:
+                                competitor.shortName ||
+                                "",
+
+                            longName:
+                                competitor.longName ||
+                                "",
+
+                            nameForURL:
+                                competitor.nameForURL ||
+                                "",
+
+                            competitionId:
+                                Number(
+                                    competitionId
+                                )
+                        })
+                    );
+
+
+            setCached(
+                cacheKey,
+                teams,
+                NETWORK.teamDirectoryCacheMs
+            );
+
+
+            return teams;
+        }
+    );
+}
+
+
+// ============================================================
+// BUILD SEARCH INDEX
+// ============================================================
+
+function createTeamAliases(team) {
+
+    const aliases =
+        new Set();
+
+
+    const values = [
+        team.name,
+        team.shortName,
+        team.longName,
+        team.nameForURL
+    ];
+
+
+    for (
+        const value
+        of values
+    ) {
+
+        if (!value) {
+            continue;
+        }
+
+
+        const normalized =
+            normalizeTeamName(value);
+
+
+        const stripped =
+            stripGenericClubTokens(
+                value
+            );
+
+
+        if (normalized) {
+            aliases.add(normalized);
+        }
+
+
+        if (stripped) {
+            aliases.add(stripped);
+        }
+    }
+
+
+    return [
+        ...aliases
+    ];
+}
+
+
+function buildTeamDirectory(
+    teams
+) {
+
+    const aliasMap =
+        new Map();
+
+
+    const teamsById =
+        new Map();
+
+
+    for (
+        const team
+        of teams
+    ) {
+
+        /*
+            The same team should only exist once in
+            the final directory.
+        */
+
+        if (
+            teamsById.has(
+                team.id
+            )
+        ) {
+            continue;
+        }
+
+
+        teamsById.set(
+            team.id,
+            team
+        );
+
+
+        const aliases =
+            createTeamAliases(team);
+
+
+        for (
+            const alias
+            of aliases
+        ) {
+
+            if (
+                !aliasMap.has(alias)
+            ) {
+
+                aliasMap.set(
+                    alias,
+                    []
+                );
+            }
+
+
+            aliasMap
+                .get(alias)
+                .push(team);
+        }
+    }
+
+
+    return {
+        aliasMap,
+        teamsById
+    };
+}
+
+
+// ============================================================
+// GET ALL SUPPORTED EUROPEAN TEAMS
+// ============================================================
+
+async function getDynamicTeamDirectory() {
+
+    const cacheKey =
+        "dynamic-team-directory";
+
+
+    const cached =
+        getCached(cacheKey);
+
+
+    if (cached) {
+        return cached;
+    }
+
+
+    return deduplicatedRequest(
+        cacheKey,
+
+        async () => {
+
+            /*
+                Promise.all is safe here.
+
+                Each call still goes through fetch365(),
+                which uses the GLOBAL serial request queue.
+
+                So logically we request all leagues together,
+                while physically the API calls remain
+                rate-controlled.
+            */
+
+            const leagueTeamLists =
+                await Promise.all(
+                    DYNAMIC_TEAM_LEAGUES.map(
+                        league =>
+                            getLeagueTeams(
+                                league.competitionId
+                            )
+                    )
+                );
+
+
+            const allTeams =
+                leagueTeamLists.flat();
+
+
+            const directory =
+                buildTeamDirectory(
+                    allTeams
+                );
+
+
+            setCached(
+                cacheKey,
+                directory,
+                NETWORK.teamDirectoryCacheMs
+            );
+
+
+            return directory;
+        }
+    );
+}
+
+
+// ============================================================
+// DYNAMIC TEAM LOOKUP
+// ============================================================
+
+async function findDynamicTeam(
+    rawQuery
+) {
+
+    const query =
+        normalizeTeamName(
+            rawQuery
+        );
+
+
+    const strippedQuery =
+        stripGenericClubTokens(
+            rawQuery
+        );
+
+
+    if (!query) {
+
+        return {
+            status:
+                "not_found"
+        };
+    }
+
+
+    const directory =
+        await getDynamicTeamDirectory();
+
+
+    const candidates =
+        new Map();
+
+
+    function addMatches(alias) {
+
+        if (!alias) {
+            return;
+        }
+
+
+        const matches =
+            directory.aliasMap.get(
+                alias
+            ) || [];
+
+
+        for (
+            const team
+            of matches
+        ) {
+
+            candidates.set(
+                team.id,
+                team
+            );
+        }
+    }
+
+
+    /*
+        Exact alias matching only.
+
+        We deliberately avoid fuzzy/sub-string matching
+        because returning fixtures for the WRONG football
+        club is worse than saying that no club was found.
+    */
+
+    addMatches(query);
+
+
+    if (
+        strippedQuery !==
+        query
+    ) {
+
+        addMatches(
+            strippedQuery
+        );
+    }
+
+
+    const matches =
+        [...candidates.values()];
+
+
+    if (
+        matches.length === 0
+    ) {
+
+        return {
+            status:
+                "not_found"
+        };
+    }
+
+
+    if (
+        matches.length > 1
+    ) {
+
+        return {
+            status:
+                "ambiguous",
+
+            matches
+        };
+    }
+
+
+    return {
+        status:
+            "found",
+
+        team:
+            matches[0]
+    };
 }
 
 
@@ -821,9 +1326,7 @@ async function requestGameDetails(
     };
 
 
-    if (
-        matchupId
-    ) {
+    if (matchupId) {
 
         params.matchupId =
             matchupId;
@@ -853,9 +1356,7 @@ async function getGameDetails(
 
 
     const cached =
-        getCached(
-            cacheKey
-        );
+        getCached(cacheKey);
 
 
     if (cached) {
@@ -872,9 +1373,9 @@ async function getGameDetails(
                 null;
 
 
-            // =================================================
-            // Attempt 1: gameId only
-            // =================================================
+            // ------------------------------------------------
+            // Strategy 1: gameId only
+            // ------------------------------------------------
 
             try {
 
@@ -884,13 +1385,13 @@ async function getGameDetails(
                     );
 
             } catch {
-                // Try next strategy
+                // Continue
             }
 
 
-            // =================================================
-            // Attempt 2: matchupId supplied by 365Scores
-            // =================================================
+            // ------------------------------------------------
+            // Strategy 2: supplied matchupId
+            // ------------------------------------------------
 
             if (
                 !details &&
@@ -906,25 +1407,23 @@ async function getGameDetails(
                         );
 
                 } catch {
-                    // Try next strategy
+                    // Continue
                 }
             }
 
 
-            // =================================================
-            // Attempt 3: Construct matchupId
-            // =================================================
+            // ------------------------------------------------
+            // Strategy 3: construct matchupId
+            // ------------------------------------------------
 
             if (!details) {
 
                 const homeId =
-                    game.homeCompetitor
-                        ?.id;
+                    game.homeCompetitor?.id;
 
 
                 const awayId =
-                    game.awayCompetitor
-                        ?.id;
+                    game.awayCompetitor?.id;
 
 
                 const competitionId =
@@ -959,9 +1458,7 @@ async function getGameDetails(
                                 );
 
 
-                            if (
-                                details
-                            ) {
+                            if (details) {
                                 break;
                             }
 
@@ -973,9 +1470,7 @@ async function getGameDetails(
             }
 
 
-            if (
-                !details
-            ) {
+            if (!details) {
 
                 throw new Error(
                     `Unable to load details for game ${game.id}`
@@ -997,7 +1492,7 @@ async function getGameDetails(
 
 
 // ============================================================
-// TV CHANNELS
+// TV
 // ============================================================
 
 async function getIsraeliTVChannels(
@@ -1005,9 +1500,8 @@ async function getIsraeliTVChannels(
 ) {
 
     /*
-        If the fixtures/allScores response explicitly says
-        this game has no TV networks, don't waste another
-        request on /web/game/.
+        If allscores explicitly tells us there are
+        no TV networks, don't call /web/game/.
     */
 
     if (
@@ -1020,9 +1514,7 @@ async function getIsraeliTVChannels(
 
 
     const details =
-        await getGameDetails(
-            game
-        );
+        await getGameDetails(game);
 
 
     const networks =
@@ -1035,20 +1527,15 @@ async function getIsraeliTVChannels(
 
     return [
         ...new Set(
-
             networks
 
                 .filter(
-                    network => {
-
-                        return (
-                            !network.countryId ||
-                            Number(
-                                network.countryId
-                            ) ===
-                                BOT.countryId
-                        );
-                    }
+                    network =>
+                        !network.countryId ||
+                        Number(
+                            network.countryId
+                        ) ===
+                            BOT.countryId
                 )
 
                 .map(
@@ -1056,9 +1543,7 @@ async function getIsraeliTVChannels(
                         network.name
                 )
 
-                .filter(
-                    Boolean
-                )
+                .filter(Boolean)
         )
     ];
 }
@@ -1099,9 +1584,7 @@ async function buildDailyGamesMessage(
 
 
     const groups =
-        groupGames(
-            games
-        );
+        groupGames(games);
 
 
     const output = [
@@ -1144,16 +1627,12 @@ async function buildDailyGamesMessage(
         }
 
 
-        output.push(
-            ""
-        );
+        output.push("");
     }
 
 
     return output
-        .join(
-            "\n"
-        )
+        .join("\n")
         .trim();
 }
 
@@ -1183,9 +1662,7 @@ async function tomorrow() {
 async function link() {
 
     const date =
-        getIsraelDate(
-            0
-        );
+        getIsraelDate(0);
 
 
     const games =
@@ -1208,9 +1685,7 @@ async function link() {
 
 
     const groups =
-        groupGames(
-            games
-        );
+        groupGames(games);
 
 
     const output = [
@@ -1222,10 +1697,10 @@ async function link() {
 
 
     /*
-        We deliberately process games sequentially.
+        Deliberately sequential.
 
-        This prevents !link from generating a large
-        simultaneous burst of requests to 365Scores.
+        Each game detail request also uses the global API
+        queue and cache.
     */
 
     for (
@@ -1236,14 +1711,14 @@ async function link() {
         of groups
     ) {
 
-        const competitionConfig =
+        const config =
             COMPETITIONS[
                 competitionId
             ];
 
 
         output.push(
-            `${competitionConfig?.emoji || "🏆"} *${competitionConfig?.name || competitionName(competitionGames[0])}*`
+            `${config?.emoji || "🏆"} *${config?.name || competitionName(competitionGames[0])}*`
         );
 
 
@@ -1279,10 +1754,6 @@ async function link() {
             );
 
 
-            // =================================================
-            // NO TV CHANNEL FOUND
-            // =================================================
-
             if (
                 channels.length ===
                 0
@@ -1296,30 +1767,32 @@ async function link() {
                     "🔗 לא נמצא קישור למשחק"
                 );
 
-                output.push(
-                    ""
-                );
+                output.push("");
 
                 continue;
             }
 
 
-            // =================================================
-            // TV CHANNELS
-            // =================================================
-
             output.push(
                 `📺 ${channels.join(", ")}`
             );
 
+            
 
-            // =================================================
-            // MAP TV CHANNEL -> TEST URL
-            // =================================================
+            /*
+            365Scores may return more than one TV channel.
+
+            We intentionally use only the FIRST channel,
+            preserving the order returned by 365Scores.
+                    */
+
+            const primaryChannel =
+                channels[0];
+
 
             const links =
                 getLinksForChannels(
-                    channels
+                    [primaryChannel]
                 );
 
 
@@ -1332,46 +1805,21 @@ async function link() {
                     "🔗 לא נמצא קישור למשחק"
                 );
 
-            } else if (
-                links.length ===
-                1
-            ) {
+            } else {
 
                 output.push(
                     `🔗 ${links[0].url}`
                 );
-
-            } else {
-
-                /*
-                    Rare case:
-                    game broadcasts on multiple supported
-                    channels.
-                */
-
-                for (
-                    const link
-                    of links
-                ) {
-
-                    output.push(
-                        `🔗 ${link.displayName}: ${link.url}`
-                    );
-                }
             }
 
 
-            output.push(
-                ""
-            );
+            output.push("");
         }
     }
 
 
     return output
-        .join(
-            "\n"
-        )
+        .join("\n")
         .trim();
 }
 
@@ -1406,25 +1854,16 @@ async function teamFixtures(
 
     const blocks =
         games.map(
-            game => {
+            game => [
 
-                return [
+                `📅 ${formatDate(game.startTime)} | ${formatTime(game.startTime)}`,
 
-                    `📅 ${formatDate(game.startTime)} | ${formatTime(game.startTime)}`,
+                `⚽ ${homeName(game)} - ${awayName(game)}`,
 
-                    `⚽ ${homeName(game)} - ${awayName(game)}`,
-
-                    `🏆 ${competitionName(game)}`
-                ]
-
-                    .filter(
-                        Boolean
-                    )
-
-                    .join(
-                        "\n"
-                    );
-            }
+                `🏆 ${competitionName(game)}`
+            ]
+                .filter(Boolean)
+                .join("\n")
         );
 
 
@@ -1434,13 +1873,8 @@ async function teamFixtures(
 
         "",
 
-        blocks.join(
-            "\n\n"
-        )
-    ]
-        .join(
-            "\n"
-        );
+        blocks.join("\n\n")
+    ].join("\n");
 }
 
 
@@ -1449,8 +1883,14 @@ async function teamFixtures(
 // ============================================================
 
 module.exports = {
+
     today,
+
     tomorrow,
+
     link,
-    teamFixtures
+
+    teamFixtures,
+
+    findDynamicTeam
 };
