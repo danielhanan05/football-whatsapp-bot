@@ -202,10 +202,10 @@ const CHANNEL_ALIASES = new Map([
     // ========================================================
 
     ["5 stars", "SPORT_5_STARS"],
-    ["5stars", "SPORT_5_STARS"],
+    ["ספורט 5 stars", "SPORT_5_STARS"],
     ["sport 5 stars", "SPORT_5_STARS"],
     ["sport5 stars", "SPORT_5_STARS"],
-    ["sport5stars", "SPORT_5_STARS"],
+    ["ספורט 5 Stars", "SPORT_5_STARS"],
     ["5 סטארס", "SPORT_5_STARS"],
     ["ספורט 5 סטארס", "SPORT_5_STARS"],
 
